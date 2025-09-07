@@ -1,0 +1,8 @@
+## Interface: 110200
+## Title: PaulFarmTracker
+## Author: Paul Tenny\pwn20 (pwtenny@gmail.com)
+## Version: 1.0
+## Notes: Tracks a specific item for farming sessions.
+## SavedVariables: PaulFarmTrackerDB
+
+PaulFarmTracker.lua
