@@ -11,11 +11,91 @@ local PFT = {}
 
 PFT.chatPrefix = "|cff3399ffPFT|r: "
 PFT.sessionTotal = 0
-PFT.lastPrintedTotal = 0 -- NEW: Tracks the total when the last update was printed.
+PFT.lastPrintedTotal = 0
 PFT.goalReached = false
 
 local function Print(message)
     print(PFT.chatPrefix .. message)
+end
+
+-- ============================================================================
+-- UI Creation & Management
+-- ============================================================================
+
+-- NEW: This function creates all the UI elements for our tracker window.
+function PFT:CreateUI()
+    -- Main Frame
+    local frame = CreateFrame("Frame", "PFT_MainFrame", UIParent, "BackdropTemplate")
+    frame:SetSize(220, 110)
+    
+    -- Load saved position or center it if none exists
+    if PaulFarmTrackerDB and PaulFarmTrackerDB.framePoint then
+        frame:SetPoint(unpack(PaulFarmTrackerDB.framePoint))
+    else
+        frame:SetPoint("CENTER")
+    end
+    
+    frame:SetBackdrop({
+        bgFile = "Interface/DialogFrame/UI-DialogBox-Background",
+        edgeFile = "Interface/DialogFrame/UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
+    frame:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+
+    -- Make the frame movable
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        -- Save the frame's position when the user stops dragging it
+        PaulFarmTrackerDB.framePoint = {self:GetPoint()}
+    end)
+    frame:SetClampedToScreen(true) -- Keep it on the screen
+
+    -- Title Text
+    frame.title = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    frame.title:SetPoint("TOP", frame, "TOP", 0, -16)
+    frame.title:SetText("Paul's Farm Tracker")
+
+    -- Item and Progress (Total / Goal)
+    frame.progress = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    frame.progress:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -40)
+
+    -- Price Per Item
+    frame.price = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    frame.price:SetPoint("TOPLEFT", frame.progress, "BOTTOMLEFT", 0, -8)
+    
+    -- Total Gold Value
+    frame.totalValue = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    frame.totalValue:SetPoint("TOPLEFT", frame.price, "BOTTOMLEFT", 0, -8)
+
+    -- Hide frame by default, let the DB setting determine visibility
+    frame:Hide()
+end
+
+-- NEW: This function updates the text on our UI frame.
+function PFT:UpdateDisplay()
+    local frame = PFT_MainFrame
+    if not frame then return end -- Don't do anything if the frame doesn't exist
+
+    local itemID = PaulFarmTrackerDB.itemId
+    local itemName = GetItemInfo(itemID) or PaulFarmTrackerDB.itemName -- Fallback to saved name
+    local currentTotal = PFT.sessionTotal
+    local goal = PaulFarmTrackerDB.goal
+    local price = PaulFarmTrackerDB.price
+    local totalValue = currentTotal * price
+
+    -- Line 1: Item Name: Current / Goal
+    frame.progress:SetText(string.format("%s: |cffffffff%d / %d|r", itemName, currentTotal, goal))
+    
+    -- Line 2: Price per item
+    frame.price:SetText(string.format("Price/ea: |cFFebeb42%.2fg|r", price))
+
+    -- Line 3: Total estimated value
+    frame.totalValue:SetText(string.format("Est. Value: |cFFebeb42%.2fg|r", totalValue))
 end
 
 -- ============================================================================
@@ -47,21 +127,30 @@ function PFT:OnAddonLoaded()
         itemId = 168649,
         itemName = "Dredged Leather",
         price = 10,
-        goal = 1000
+        goal = 1000,
+        framePoint = nil, -- NEW: For saving frame position
+        isShown = true    -- NEW: To remember if the frame should be shown
     }
 
     local initialCount = PFT:ScanBagsForItem(PaulFarmTrackerDB.itemId)
     PFT.sessionTotal = initialCount
-    PFT.lastPrintedTotal = initialCount -- MODIFIED: Initialize the last printed total.
+    PFT.lastPrintedTotal = initialCount
     
     SlashCmdList["PFT"] = PFT.SlashCmdHandler
     SLASH_PFT1 = "/pft"
 
+    -- NEW: Create and update the UI
+    PFT:CreateUI()
+    PFT:UpdateDisplay()
+    
+    -- NEW: Show or hide the frame based on the saved setting
+    if PaulFarmTrackerDB.isShown then
+        PFT_MainFrame:Show()
+    end
+
     Print("PaulFarmTracker loaded. Type /pft help for commands.")
-    -- Print(string.format("Found %d %s in your bags to start.", initialCount, PaulFarmTrackerDB.itemName))
 end
 
--- MODIFIED: This is the main logic change for your request.
 function PFT:OnLootOpened()
     if not IsModifiedClick("AUTOLOOTTOGGLE") then
         local numLootItems = GetNumLootItems()
@@ -72,20 +161,16 @@ function PFT:OnLootOpened()
                 local lootedItemId = GetItemInfoFromHyperlink(itemLink)
 
                 if lootedItemId == PaulFarmTrackerDB.itemId then
-                    -- First, update the session total as usual.
                     PFT.sessionTotal = PFT.sessionTotal + quantity
+                    PFT:UpdateDisplay() -- MODIFIED: Update the UI on loot
 
-                    -- NEW LOGIC: Check if we have crossed the 100-item threshold.
                     if PFT.sessionTotal >= PFT.lastPrintedTotal + 100 then
                         local totalValue = PFT.sessionTotal * PaulFarmTrackerDB.price                     
                         local status = string.format("Update: %d / %d (Est. Value: |cFFebeb42%.2fg|r)", PFT.sessionTotal, PaulFarmTrackerDB.goal, totalValue)
                         Print(status)
-                        
-                        -- Crucially, update the last printed total to the current total.
                         PFT.lastPrintedTotal = PFT.sessionTotal
                     end
 
-                    -- The goal reached message is a separate check and still fires once.
                     if PFT.sessionTotal >= PaulFarmTrackerDB.goal and not PFT.goalReached then
                         Print(string.format("|cff00ff00GOAL REACHED!|r You have farmed |cFFebeb42%s|r / |cFFebeb42%d|r %s!", PFT.sessionTotal, PaulFarmTrackerDB.goal, PaulFarmTrackerDB.itemName))
                         PFT.goalReached = true
@@ -121,32 +206,51 @@ function PFT.SlashCmdHandler(msg)
 
     elseif command == "set" then
         local option = args[2]
-        local value = tonumber(args[3])
+        local value = tonumber(args[3]) or args[3] -- Keep value as string if it's not a number
 
-        if option == "goal" and value and value > 0 then
+        if option == "goal" and tonumber(value) and value > 0 then
             PaulFarmTrackerDB.goal = value
             PFT.goalReached = PFT.sessionTotal >= PaulFarmTrackerDB.goal
             Print(string.format("Goal updated to |cFFebeb42%d|r.", value))
-        elseif option == "price" and value and value >= 0 then
+        elseif option == "price" and tonumber(value) and value >= 0 then
             PaulFarmTrackerDB.price = value
             Print(string.format("Price per item updated to |cFFebeb42%.2fg|r.", value))
-        elseif option == "total" and value and value >= 0 then
+        elseif option == "total" and tonumber(value) and value >= 0 then
             PFT.sessionTotal = value
-            PFT.lastPrintedTotal = value -- MODIFIED: Update last printed total on manual set.
+            PFT.lastPrintedTotal = value
             PFT.goalReached = PFT.sessionTotal >= PaulFarmTrackerDB.goal
             Print(string.format("Session total manually set to |cFFebeb42%d|r.", value))
-        elseif option == "itemid" and value and value >= 0 then
+        elseif option == "itemid" and tonumber(value) and value >= 0 then
             PaulFarmTrackerDB.itemId = value
-            Print(string.format("New itemId set to |cFFebeb42%d|r", value))
+            local newItemName = GetItemInfo(value)
+            if newItemName then
+                PaulFarmTrackerDB.itemName = newItemName
+                Print(string.format("New item set to: |cFFebeb42%s|r (%d)", newItemName, value))
+            else
+                Print(string.format("New itemId set to |cFFebeb42%d|r. Name will update shortly.", value))
+            end
         else
-            Print("Invalid set command. Use: /pft set [goal|price|total] [number]")
+            Print("Invalid set command. Use: /pft set [goal|price|total|itemid] [number]")
         end
+        PFT:UpdateDisplay() -- MODIFIED: Update display after any 'set' command
 
     elseif command == "reset" then
         PFT.sessionTotal = 0
-        PFT.lastPrintedTotal = 0 -- MODIFIED: Reset the last printed total as well.
+        PFT.lastPrintedTotal = 0
         PFT.goalReached = false
         Print("Session total has been reset to 0.")
+        PFT:UpdateDisplay() -- MODIFIED: Update display after reset
+    
+    -- NEW: Commands to show/hide the UI
+    elseif command == "show" then
+        PFT_MainFrame:Show()
+        PaulFarmTrackerDB.isShown = true
+        Print("Tracker window shown.")
+        
+    elseif command == "hide" then
+        PFT_MainFrame:Hide()
+        PaulFarmTrackerDB.isShown = false
+        Print("Tracker window hidden.")
 
     elseif command == "help" then
         Print("Available Commands:")
@@ -156,6 +260,7 @@ function PFT.SlashCmdHandler(msg)
         Print("|cff00ff00/pft|r |cFFebeb42set total [number]|r - Manually sets the current session count.")
         Print("|cff00ff00/pft|r |cFFebeb42set itemid [number]|r - Change/set the ID of the item to be tracked.")
         Print("|cff00ff00/pft|r |cFFebeb42reset|r - Resets the current session's count to 0.")
+        Print("|cff00ff00/pft|r |cFFebeb42show|r/|cFFebeb42hide|r - Shows or hides the tracker window.")
 
 	elseif command == "debug" then
 		Print(string.format("sessionTotal: %d, lastPrintedTotal: %d.", PFT.sessionTotal, PFT.lastPrintedTotal));
