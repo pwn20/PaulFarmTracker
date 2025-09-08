@@ -9,7 +9,7 @@ local PFT = {}
 -- Configuration & Session Data
 -- ============================================================================
 
-PFT.chatPrefix = "|cff3399ff[PFT]|r "
+PFT.chatPrefix = "|cff3399ffPFT|r: "
 PFT.sessionTotal = 0
 PFT.lastPrintedTotal = 0 -- NEW: Tracks the total when the last update was printed.
 PFT.goalReached = false
@@ -46,7 +46,7 @@ function PFT:OnAddonLoaded()
     PaulFarmTrackerDB = PaulFarmTrackerDB or {
         itemId = 168649,
         itemName = "Dredged Leather",
-        price = 0,
+        price = 10,
         goal = 1000
     }
 
@@ -114,6 +114,7 @@ function PFT.SlashCmdHandler(msg)
         local totalValue = (PFT.sessionTotal * price)
         local percentage = (goal > 0 and (PFT.sessionTotal / goal) * 100 or 0)
         
+		Print("---")
         Print(string.format("Tracking: |cFFebeb42%s|r", PaulFarmTrackerDB.itemName))
         Print(string.format("Session: |cFFebeb42%d|r / |cFFebeb42%d|r (|cFFebeb42%.1f%%|r)", PFT.sessionTotal, goal, percentage))
         Print(string.format("Est. Value: |cFFebeb42%.2fg|r", totalValue))
@@ -134,6 +135,9 @@ function PFT.SlashCmdHandler(msg)
             PFT.lastPrintedTotal = value -- MODIFIED: Update last printed total on manual set.
             PFT.goalReached = PFT.sessionTotal >= PaulFarmTrackerDB.goal
             Print(string.format("Session total manually set to |cFFebeb42%d|r.", value))
+        elseif option == "itemid" and value and value >= 0 then
+            PaulFarmTrackerDB.itemId = value
+            Print(string.format("New itemId set to |cFFebeb42%d|r", value))
         else
             Print("Invalid set command. Use: /pft set [goal|price|total] [number]")
         end
@@ -150,6 +154,7 @@ function PFT.SlashCmdHandler(msg)
         Print("|cff00ff00/pft|r |cFFebeb42set goal [number]|r - Sets your farming goal.")
         Print("|cff00ff00/pft|r |cFFebeb42set price [number]|r - Sets the price per item.")
         Print("|cff00ff00/pft|r |cFFebeb42set total [number]|r - Manually sets the current session count.")
+        Print("|cff00ff00/pft|r |cFFebeb42set itemid [number]|r - Change/set the ID of the item to be tracked.")
         Print("|cff00ff00/pft|r |cFFebeb42reset|r - Resets the current session's count to 0.")
 
 	elseif command == "debug" then
