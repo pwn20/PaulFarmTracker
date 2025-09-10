@@ -13,6 +13,7 @@ PFT.chatPrefix = "|cff3399ffPFT|r: "
 PFT.sessionTotal = 0
 PFT.lastPrintedTotal = 0
 PFT.goalReached = false
+PFT.cheapestPrice = 0
 
 local function Print(message)
     print(PFT.chatPrefix .. message)
@@ -106,6 +107,53 @@ function PFT:ScanBagsForItem(itemId)
     return C_Item.GetItemCount(itemId)
 end
 
+function PFT:QueryAuctionHouse()
+    local itemID = PaulFarmTrackerDB.itemId
+    if not itemID then return end
+
+    local _, itemLink = GetItemInfo(itemID)
+    if not itemLink then return end
+
+    -- Priority 1: Check for Auctionator API
+    if AUCTIONATOR_API_GetPrice and type(AUCTIONATOR_API_GetPrice) == "function" then
+        local price = AUCTIONATOR_API_GetPrice(itemLink)
+        if price and price > 0 then
+            PFT.cheapestPrice = price / 10000 -- Convert from copper
+            Print(string.format("Cheapest '%s' (from Auctionator) found for |cFFebeb42%.2fg|r.", PaulFarmTrackerDB.itemName, PFT.cheapestPrice))
+        end
+    -- Priority 2: Check for Standard Blizzard API
+    elseif C_AuctionHouse and C_AuctionHouse.Query then
+        C_AuctionHouse.Query({itemLink = itemLink})
+    end
+end
+
+function PFT:UpdateAuctionData()
+    if not (C_AuctionHouse and C_AuctionHouse.GetBrowseResults) then return end
+
+    local results = C_AuctionHouse.GetBrowseResults()
+    
+    -- Guard against nil or irrelevant results
+    if not results or not results[1] or not results[1].itemKey or results[1].itemKey.itemID ~= PaulFarmTrackerDB.itemId then
+        return
+    end
+
+    local cheapest = nil
+
+    for _, result in ipairs(results) do
+        if result.minPrice and result.minPrice > 0 then
+            local pricePer = result.minPrice
+            if not cheapest or pricePer < cheapest then
+                cheapest = pricePer
+            end
+        end
+    end
+
+    if cheapest then
+        PFT.cheapestPrice = cheapest / 10000 -- convert from copper
+        Print(string.format("Cheapest '%s' found for |cFFebeb42%.2fg|r.", PaulFarmTrackerDB.itemName, PFT.cheapestPrice))
+    end
+end
+
 -- ============================================================================
 -- Event Handling
 -- ============================================================================
@@ -117,10 +165,16 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "LOOT_OPENED" then
         PFT:OnLootOpened()
+    elseif event == "AUCTION_HOUSE_SHOW" then
+        PFT:QueryAuctionHouse()
+    elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" then
+        PFT:UpdateAuctionData()
     end
 end)
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("LOOT_OPENED")
+eventFrame:RegisterEvent("AUCTION_HOUSE_SHOW")
+eventFrame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
 
 function PFT:OnAddonLoaded()
     PaulFarmTrackerDB = PaulFarmTrackerDB or {
@@ -203,6 +257,9 @@ function PFT.SlashCmdHandler(msg)
         Print(string.format("Tracking: |cFFebeb42%s|r", PaulFarmTrackerDB.itemName))
         Print(string.format("Session: |cFFebeb42%d|r / |cFFebeb42%d|r (|cFFebeb42%.1f%%|r)", PFT.sessionTotal, goal, percentage))
         Print(string.format("Est. Value: |cFFebeb42%.2fg|r", totalValue))
+        if PFT.cheapestPrice > 0 then
+            Print(string.format("AH Cheapest: |cFFebeb42%.2fg|r", PFT.cheapestPrice))
+        end
 
     elseif command == "set" then
         local option = args[2]
