@@ -1,0 +1,5 @@
+<Bindings>
+    <Binding name="SWAPGLOVES" header="PAULFARMTRACKER" category="AddOns">
+        PFT:SwapGloves()
+    </Binding>
+</Bindings>

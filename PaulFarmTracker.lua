@@ -3,7 +3,10 @@
 -- ============================================================================
 
 local addonName, addon = ...
-local PFT = {}
+PFT = {}
+
+-- Make the addon's table global for the keybinding
+local PFT = PFT
 
 -- ============================================================================
 -- Configuration & Session Data
@@ -14,6 +17,12 @@ PFT.sessionTotal = 0
 PFT.lastPrintedTotal = 0
 PFT.goalReached = false
 PFT.cheapestPrice = 0
+
+-- Gear sets for swapping
+PFT.gloveSet = {
+    169399, -- Deeptide Gloves
+    161029  -- Ageless Toxin Grips
+}
 
 local function Print(message)
     print(PFT.chatPrefix .. message)
@@ -26,8 +35,9 @@ end
 -- NEW: This function creates all the UI elements for our tracker window.
 function PFT:CreateUI()
     -- Main Frame
-    local frame = CreateFrame("Frame", "PFT_MainFrame", UIParent, "BackdropTemplate")
-    frame:SetSize(220, 110)
+    PFT.frame = CreateFrame("Frame", "PFT_MainFrame", UIParent, "BackdropTemplate")
+	local frame = PFT.frame
+    frame:SetSize(220, 130)
     
     -- Load saved position or center it if none exists
     if PaulFarmTrackerDB and PaulFarmTrackerDB.framePoint then
@@ -73,6 +83,10 @@ function PFT:CreateUI()
     frame.totalValue = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     frame.totalValue:SetPoint("TOPLEFT", frame.price, "BOTTOMLEFT", 0, -8)
 
+    -- Equipped Gloves
+    frame.equippedGloves = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    frame.equippedGloves:SetPoint("TOPLEFT", frame.totalValue, "BOTTOMLEFT", 0, -8)
+	
     -- Hide frame by default, let the DB setting determine visibility
     frame:Hide()
 end
@@ -97,6 +111,23 @@ function PFT:UpdateDisplay()
 
     -- Line 3: Total estimated value
     frame.totalValue:SetText(string.format("Est. Value: |cFFebeb42%.2fg|r", totalValue))
+
+    -- Line 4: Equipped Gloves
+    local handsSlotId = GetInventorySlotInfo("HANDSSLOT")
+    local equippedGloveID = GetInventoryItemID("player", handsSlotId)
+    local equippedGloveName = "None"
+    if equippedGloveID and equippedGloveID ~= 0 then
+        equippedGloveName = GetItemInfo(equippedGloveID)
+    end
+	
+	-- Give the gloves actual useful names
+	if equippedGloveName == "Ageless Toxin Grips" then
+	  equippedGloveName = "Skinning"
+	elseif equippedGloveName == "Deeptide Gloves" then
+	  equippedGloveName = "Herbalism"
+	end
+	
+    frame.equippedGloves:SetText(string.format("Gloves: |cffffffff%s|r", equippedGloveName))
 end
 
 -- ============================================================================
@@ -154,6 +185,31 @@ function PFT:UpdateAuctionData()
     end
 end
 
+function PFT:SwapGloves()
+    local handsSlotId = GetInventorySlotInfo("HANDSSLOT")
+    local equippedItemID = GetInventoryItemID("player", handsSlotId)
+    local itemToEquipID
+
+    if not equippedItemID or equippedItemID == 0 then
+        itemToEquipID = PFT.gloveSet[1]
+    else
+        if equippedItemID == PFT.gloveSet[1] then
+            itemToEquipID = PFT.gloveSet[2]
+        else
+            itemToEquipID = PFT.gloveSet[1]
+        end
+    end
+
+    if itemToEquipID then
+        local itemName = GetItemInfo(itemToEquipID)
+        EquipItemByName(itemToEquipID)
+        -- Print(string.format("Equipped: |cFFebeb42%s|r", itemName))
+        PFT:UpdateDisplay()
+    else
+        Print("No item to equip.")
+    end
+end
+
 -- ============================================================================
 -- Event Handling
 -- ============================================================================
@@ -169,12 +225,16 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         PFT:QueryAuctionHouse()
     elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" then
         PFT:UpdateAuctionData()
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+        -- Print("Equipment has changed.")
+		PFT:UpdateDisplay()
     end
 end)
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("LOOT_OPENED")
 eventFrame:RegisterEvent("AUCTION_HOUSE_SHOW")
 eventFrame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 
 function PFT:OnAddonLoaded()
     PaulFarmTrackerDB = PaulFarmTrackerDB or {
@@ -309,6 +369,9 @@ function PFT.SlashCmdHandler(msg)
         PaulFarmTrackerDB.isShown = false
         Print("Tracker window hidden.")
 
+    elseif command == "swap" then
+        PFT:SwapGloves()
+
     elseif command == "help" then
         Print("Available Commands:")
         Print("|cff00ff00/pft|r |cFFebeb42status|r - Shows current farming progress.")
@@ -318,6 +381,7 @@ function PFT.SlashCmdHandler(msg)
         Print("|cff00ff00/pft|r |cFFebeb42set itemid [number]|r - Change/set the ID of the item to be tracked.")
         Print("|cff00ff00/pft|r |cFFebeb42reset|r - Resets the current session's count to 0.")
         Print("|cff00ff00/pft|r |cFFebeb42show|r/|cFFebeb42hide|r - Shows or hides the tracker window.")
+        Print("|cff00ff00/pft|r |cFFebeb42swap|r - Swaps between your two defined glove sets.")
 
 	elseif command == "debug" then
 		Print(string.format("sessionTotal: %d, lastPrintedTotal: %d.", PFT.sessionTotal, PFT.lastPrintedTotal));

@@ -5,4 +5,5 @@
 ## Notes: Tracks a specific item for farming sessions.
 ## SavedVariables: PaulFarmTrackerDB
 
+Bindings.xml
 PaulFarmTracker.lua
