@@ -1,4 +1,4 @@
-## Interface: 110200
+## Interface: 120000
 ## Title: PaulFarmTracker
 ## Author: Paul Tenny\pwn20 (pwtenny@gmail.com)
 ## Version: 1.0

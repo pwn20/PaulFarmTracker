@@ -20,8 +20,9 @@ PFT.cheapestPrice = 0
 
 -- Gear sets for swapping
 PFT.gloveSet = {
-    169399, -- Deeptide Gloves
-    161029  -- Ageless Toxin Grips
+    --169399, -- Deeptide Gloves
+    161029,  -- Ageless Toxin Grips
+	174146 -- Gloves of Abyssal Authority
 }
 
 local function Print(message)
@@ -123,7 +124,7 @@ function PFT:UpdateDisplay()
 	-- Give the gloves actual useful names
 	if equippedGloveName == "Ageless Toxin Grips" then
 	  equippedGloveName = "Skinning"
-	elseif equippedGloveName == "Deeptide Gloves" then
+	elseif equippedGloveName == "Gloves of Abyssal Authority" then
 	  equippedGloveName = "Herbalism"
 	end
 	
@@ -210,6 +211,27 @@ function PFT:SwapGloves()
     end
 end
 
+function PFT:SwapAndAnnounce()
+    local handsSlotId = GetInventorySlotInfo("HandsSlot")
+    local equippedItemID = GetInventoryItemID("player", handsSlotId)
+
+    -- Check if Deeptide Gloves (ID 169399) are equipped
+    if equippedItemID == 169399 then
+        -- Equip Ageless Toxin Grips (ID 161029)
+		-- Replaced with Gloves of Abyssal Authority (ID 174146)
+        EquipItemByName(174146)
+        
+        -- Announce the swap
+        local itemName, itemLink = GetItemInfo(174146) -- Ageless Toxin Grips (now Gloves of Abyssal Authority)
+        if itemName then
+            RaidNotice_AddMessage(RaidWarningFrame, "Equipped: " .. itemName, {r=0, g=1, b=0})
+        end
+        
+        -- Update the addon's display
+        PFT:UpdateDisplay()
+    end
+end
+
 -- ============================================================================
 -- Event Handling
 -- ============================================================================
@@ -219,8 +241,8 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == addonName then
         PFT:OnAddonLoaded()
         self:UnregisterEvent("ADDON_LOADED")
-    elseif event == "LOOT_OPENED" then
-        PFT:OnLootOpened()
+    elseif event == "CHAT_MSG_LOOT" then
+        PFT:OnChatMsgLoot(arg1)
     elseif event == "AUCTION_HOUSE_SHOW" then
         PFT:QueryAuctionHouse()
     elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" then
@@ -231,7 +253,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     end
 end)
 eventFrame:RegisterEvent("ADDON_LOADED")
-eventFrame:RegisterEvent("LOOT_OPENED")
+eventFrame:RegisterEvent("CHAT_MSG_LOOT")
 eventFrame:RegisterEvent("AUCTION_HOUSE_SHOW")
 eventFrame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
 eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
@@ -265,32 +287,22 @@ function PFT:OnAddonLoaded()
     Print("PaulFarmTracker loaded. Type /pft help for commands.")
 end
 
-function PFT:OnLootOpened()
-    if not IsModifiedClick("AUTOLOOTTOGGLE") then
-        local numLootItems = GetNumLootItems()
-        for i = 1, numLootItems do
-            local itemLink = GetLootSlotLink(i)
-            if itemLink then
-                local _, _, quantity = GetLootSlotInfo(i)
-                local lootedItemId = GetItemInfoFromHyperlink(itemLink)
+function PFT:OnChatMsgLoot(message)
+    if string.find(message, PaulFarmTrackerDB.itemName) then
+        local currentTotal = PFT:ScanBagsForItem(PaulFarmTrackerDB.itemId)
+        PFT.sessionTotal = currentTotal
+        PFT:UpdateDisplay()
 
-                if lootedItemId == PaulFarmTrackerDB.itemId then
-                    PFT.sessionTotal = PFT.sessionTotal + quantity
-                    PFT:UpdateDisplay() -- MODIFIED: Update the UI on loot
+        if PFT.sessionTotal >= PFT.lastPrintedTotal + 100 then
+            local totalValue = PFT.sessionTotal * PaulFarmTrackerDB.price
+            local status = string.format("Update: %d / %d (Est. Value: |cFFebeb42%.2fg|r)", PFT.sessionTotal, PaulFarmTrackerDB.goal, totalValue)
+            Print(status)
+            PFT.lastPrintedTotal = PFT.sessionTotal
+        end
 
-                    if PFT.sessionTotal >= PFT.lastPrintedTotal + 100 then
-                        local totalValue = PFT.sessionTotal * PaulFarmTrackerDB.price                     
-                        local status = string.format("Update: %d / %d (Est. Value: |cFFebeb42%.2fg|r)", PFT.sessionTotal, PaulFarmTrackerDB.goal, totalValue)
-                        Print(status)
-                        PFT.lastPrintedTotal = PFT.sessionTotal
-                    end
-
-                    if PFT.sessionTotal >= PaulFarmTrackerDB.goal and not PFT.goalReached then
-                        Print(string.format("|cff00ff00GOAL REACHED!|r You have farmed |cFFebeb42%s|r / |cFFebeb42%d|r %s!", PFT.sessionTotal, PaulFarmTrackerDB.goal, PaulFarmTrackerDB.itemName))
-                        PFT.goalReached = true
-                    end
-                end
-            end
+        if PFT.sessionTotal >= PaulFarmTrackerDB.goal and not PFT.goalReached then
+            Print(string.format("|cff00ff00GOAL REACHED!|r You have farmed |cFFebeb42%s|r / |cFFebeb42%d|r %s!", PFT.sessionTotal, PaulFarmTrackerDB.goal, PaulFarmTrackerDB.itemName))
+            PFT.goalReached = true
         end
     end
 end

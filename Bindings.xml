@@ -2,4 +2,7 @@
     <Binding name="SWAPGLOVES" header="PAULFARMTRACKER" category="AddOns">
         PFT:SwapGloves()
     </Binding>
+    <Binding name="PFT_SWAPANNOUNCE" description="Swap to skinning gloves and announce" category="AddOns">
+        PFT:SwapAndAnnounce()
+    </Binding>
 </Bindings>
