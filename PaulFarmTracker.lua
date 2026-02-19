@@ -19,10 +19,15 @@ PFT.goalReached = false
 PFT.cheapestPrice = 0
 
 -- Gear sets for swapping
-PFT.gloveSet = {
-    --169399, -- Deeptide Gloves
-    161029,  -- Ageless Toxin Grips
-	174146 -- Gloves of Abyssal Authority
+PFT.gloveSets = {
+    ["tichdh"] = {
+        { id = 161029, label = "Skinning" },
+        { id = 174146, label = "Herbalism" }
+    },
+    ["zuljindh"] = {
+        { id = 24696, label = "Skinning" }, -- "Bonechewer Spikegloves of the Quickblade" (skin) on my zuljin DH
+        { id = 154738, label = "Herbalism" } -- "Illidari Gloves (herb)" on my zuljin DH
+    }
 }
 
 local function Print(message)
@@ -38,7 +43,7 @@ function PFT:CreateUI()
     -- Main Frame
     PFT.frame = CreateFrame("Frame", "PFT_MainFrame", UIParent, "BackdropTemplate")
 	local frame = PFT.frame
-    frame:SetSize(220, 130)
+    frame:SetSize(220, 145) -- Slightly taller for set name
     
     -- Load saved position or center it if none exists
     if PaulFarmTrackerDB and PaulFarmTrackerDB.framePoint then
@@ -87,6 +92,10 @@ function PFT:CreateUI()
     -- Equipped Gloves
     frame.equippedGloves = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     frame.equippedGloves:SetPoint("TOPLEFT", frame.totalValue, "BOTTOMLEFT", 0, -8)
+
+    -- Active Set Name
+    frame.activeSet = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    frame.activeSet:SetPoint("TOPLEFT", frame.equippedGloves, "BOTTOMLEFT", 0, -4)
 	
     -- Hide frame by default, let the DB setting determine visibility
     frame:Hide()
@@ -117,18 +126,31 @@ function PFT:UpdateDisplay()
     local handsSlotId = GetInventorySlotInfo("HANDSSLOT")
     local equippedGloveID = GetInventoryItemID("player", handsSlotId)
     local equippedGloveName = "None"
+    
+    -- Try to find a label from the active set
+    local activeSetName = PaulFarmTrackerDB.activeGloveSet or "default"
+    local activeSet = PFT.gloveSets[activeSetName]
+    
     if equippedGloveID and equippedGloveID ~= 0 then
-        equippedGloveName = GetItemInfo(equippedGloveID)
+        if activeSet then
+            for _, gloveData in ipairs(activeSet) do
+                if gloveData.id == equippedGloveID then
+                    equippedGloveName = gloveData.label or GetItemInfo(equippedGloveID)
+                    break
+                end
+            end
+        end
+        
+        -- Fallback to item name if no label found in active set
+        if equippedGloveName == "None" then
+            equippedGloveName = GetItemInfo(equippedGloveID) or "Unknown Item"
+        end
     end
 	
-	-- Give the gloves actual useful names
-	if equippedGloveName == "Ageless Toxin Grips" then
-	  equippedGloveName = "Skinning"
-	elseif equippedGloveName == "Gloves of Abyssal Authority" then
-	  equippedGloveName = "Herbalism"
-	end
-	
     frame.equippedGloves:SetText(string.format("Gloves: |cffffffff%s|r", equippedGloveName))
+
+    -- Line 5: Active Set Name
+    frame.activeSet:SetText(string.format("Set: |cff999999%s|r", activeSetName))
 end
 
 -- ============================================================================
@@ -187,17 +209,27 @@ function PFT:UpdateAuctionData()
 end
 
 function PFT:SwapGloves()
+    local activeSetName = PaulFarmTrackerDB.activeGloveSet or "default"
+    local activeSet = PFT.gloveSets[activeSetName]
+
+    if not activeSet or #activeSet == 0 then
+        Print(string.format("Error: Glove set '|cffff0000%s|r' not found or empty.", activeSetName))
+        return
+    end
+
     local handsSlotId = GetInventorySlotInfo("HANDSSLOT")
     local equippedItemID = GetInventoryItemID("player", handsSlotId)
     local itemToEquipID
 
-    if not equippedItemID or equippedItemID == 0 then
-        itemToEquipID = PFT.gloveSet[1]
+    if #activeSet == 1 then
+        itemToEquipID = activeSet[1].id
+    elseif not equippedItemID or equippedItemID == 0 then
+        itemToEquipID = activeSet[1].id
     else
-        if equippedItemID == PFT.gloveSet[1] then
-            itemToEquipID = PFT.gloveSet[2]
+        if equippedItemID == activeSet[1].id then
+            itemToEquipID = activeSet[2].id
         else
-            itemToEquipID = PFT.gloveSet[1]
+            itemToEquipID = activeSet[1].id
         end
     end
 
@@ -212,23 +244,39 @@ function PFT:SwapGloves()
 end
 
 function PFT:SwapAndAnnounce()
-    local handsSlotId = GetInventorySlotInfo("HandsSlot")
-    local equippedItemID = GetInventoryItemID("player", handsSlotId)
+    local activeSetName = PaulFarmTrackerDB.activeGloveSet or "default"
+    local activeSet = PFT.gloveSets[activeSetName]
 
-    -- Check if Deeptide Gloves (ID 169399) are equipped
-    if equippedItemID == 169399 then
-        -- Equip Ageless Toxin Grips (ID 161029)
-		-- Replaced with Gloves of Abyssal Authority (ID 174146)
-        EquipItemByName(174146)
+    if not activeSet or #activeSet == 0 then
+        Print(string.format("Error: Glove set '|cffff0000%s|r' not found or empty.", activeSetName))
+        return
+    end
+
+    -- Swaps to the second item in the set (or first if only one) and announces it
+    local targetIndex = (#activeSet >= 2) and 2 or 1
+    local itemToEquipID = activeSet[targetIndex].id
+    
+    if itemToEquipID then
+        local itemName, itemLink = GetItemInfo(itemToEquipID)
+        EquipItemByName(itemToEquipID)
         
-        -- Announce the swap
-        local itemName, itemLink = GetItemInfo(174146) -- Ageless Toxin Grips (now Gloves of Abyssal Authority)
         if itemName then
             RaidNotice_AddMessage(RaidWarningFrame, "Equipped: " .. itemName, {r=0, g=1, b=0})
         end
         
-        -- Update the addon's display
         PFT:UpdateDisplay()
+    end
+end
+
+function PFT:FindGloves()
+    local handsSlotId = GetInventorySlotInfo("HANDSSLOT")
+    local equippedGloveID = GetInventoryItemID("player", handsSlotId)
+    
+    if equippedGloveID and equippedGloveID ~= 0 then
+        local name = GetItemInfo(equippedGloveID)
+        Print(string.format("Currently Equipped Gloves: |cFF00ff00%s|r (ID: |cffffffff%d|r)", name or "Unknown", equippedGloveID))
+    else
+        Print("No gloves are currently equipped.")
     end
 end
 
@@ -265,8 +313,14 @@ function PFT:OnAddonLoaded()
         price = 10,
         goal = 1000,
         framePoint = nil, -- NEW: For saving frame position
-        isShown = true    -- NEW: To remember if the frame should be shown
+        isShown = true,   -- NEW: To remember if the frame should be shown
+        activeGloveSet = "default" -- NEW: Store the name of the active glove set
     }
+
+    -- Migration: ensure activeGloveSet exists if DB was already present
+    if not PaulFarmTrackerDB.activeGloveSet then
+        PaulFarmTrackerDB.activeGloveSet = "default"
+    end
 
     local initialCount = PFT:ScanBagsForItem(PaulFarmTrackerDB.itemId)
     PFT.sessionTotal = initialCount
@@ -384,6 +438,32 @@ function PFT.SlashCmdHandler(msg)
     elseif command == "swap" then
         PFT:SwapGloves()
 
+    elseif command == "setgloves" then
+        local setName = args[2]
+        if not setName then
+            Print("Usage: /pft setgloves [set_name]")
+            return
+        end
+
+        if PFT.gloveSets[setName] then
+            PaulFarmTrackerDB.activeGloveSet = setName
+            Print(string.format("Active glove set changed to: |cFFebeb42%s|r", setName))
+            PFT:UpdateDisplay()
+        else
+            Print(string.format("Error: Set '|cffff0000%s|r' not found in configuration.", setName))
+        end
+
+    elseif command == "listgloves" then
+        Print("Available Glove Sets:")
+        for name, set in pairs(PFT.gloveSets) do
+            local itemsLine = ""
+            for i, data in ipairs(set) do
+                local label = data.label or ("ID:" .. data.id)
+                itemsLine = itemsLine .. (i > 1 and " / " or "") .. label
+            end
+            Print(string.format("- |cFFebeb42%s|r: %s", name, itemsLine))
+        end
+
     elseif command == "help" then
         Print("Available Commands:")
         Print("|cff00ff00/pft|r |cFFebeb42status|r - Shows current farming progress.")
@@ -394,9 +474,23 @@ function PFT.SlashCmdHandler(msg)
         Print("|cff00ff00/pft|r |cFFebeb42reset|r - Resets the current session's count to 0.")
         Print("|cff00ff00/pft|r |cFFebeb42show|r/|cFFebeb42hide|r - Shows or hides the tracker window.")
         Print("|cff00ff00/pft|r |cFFebeb42swap|r - Swaps between your two defined glove sets.")
+        Print("|cff00ff00/pft|r |cFFebeb42setgloves [name]|r - Selects which glove set to use.")
+        Print("|cff00ff00/pft|r |cFFebeb42listgloves|r - Lists all configured glove sets.")
+        Print("|cff00ff00/pft|r |cFFebeb42findgloves|r - Scans bags for glove IDs.")
+
+	elseif command == "findgloves" then
+		PFT:FindGloves()
 
 	elseif command == "debug" then
 		Print(string.format("sessionTotal: %d, lastPrintedTotal: %d.", PFT.sessionTotal, PFT.lastPrintedTotal));
+		local activeSetName = PaulFarmTrackerDB.activeGloveSet or "default"
+		local activeSet = PFT.gloveSets[activeSetName]
+		if activeSet then
+			Print(string.format("Active Set (|cFFebeb42%s|r):", activeSetName))
+			for i, data in ipairs(activeSet) do
+				Print(string.format("  %d: %s (ID: %d)", i, data.label or "No Label", data.id))
+			end
+		end
 
     else
         Print(string.format("Unknown command: '%s'. Type |cFFebeb42/pft help.|r", command))
