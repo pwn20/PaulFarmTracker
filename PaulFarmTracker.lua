@@ -25,7 +25,7 @@ PFT.gloveSets = {
         { id = 174146, label = "Herbalism" }
     },
     ["zuljindh"] = {
-        { id = 24696, label = "Skinning" }, -- "Bonechewer Spikegloves of the Quickblade" (skin) on my zuljin DH
+        { id = 160131, label = "Skinning" }, -- "Bonechewer Spikegloves of the Quickblade" (skin) on my zuljin DH
         { id = 154738, label = "Herbalism" } -- "Illidari Gloves (herb)" on my zuljin DH
     }
 }
